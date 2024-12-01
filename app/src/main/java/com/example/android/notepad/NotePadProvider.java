@@ -85,7 +85,6 @@ public class NotePadProvider extends ContentProvider implements PipeDataWriter<C
     };
     private static final int READ_NOTE_NOTE_INDEX = 1;
     private static final int READ_NOTE_TITLE_INDEX = 2;
-
     /*
      * Constants used by the Uri matcher to choose an action based on the pattern
      * of the incoming URI

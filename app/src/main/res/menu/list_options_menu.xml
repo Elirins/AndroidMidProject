@@ -1,15 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/menu_color"
+        android:icon="@drawable/ic_menu_color"
+        android:title="@string/menu_color"
+        android:showAsAction="always" />
+    <item android:id="@+id/menu_search"
+        android:icon="@android:drawable/ic_menu_search"
+        android:title="@string/menu_search"
+        android:showAsAction="always" />
     <!--  This is our one standard application action (creating a new note). -->
     <item android:id="@+id/menu_add"
-          android:icon="@drawable/ic_menu_compose"
-          android:title="@string/menu_add"
-          android:alphabeticShortcut='a'
-          android:showAsAction="always" />
+        android:icon="@drawable/ic_menu_compose"
+        android:title="@string/menu_add"
+        android:showAsAction="always" />
     <!--  If there is currently data in the clipboard, this adds a PASTE menu item to the menu
           so that the user can paste in the data.. -->
     <item android:id="@+id/menu_paste"
-          android:icon="@drawable/ic_menu_compose"
-          android:title="@string/menu_paste"
-          android:alphabeticShortcut='p' />
+        android:icon="@drawable/ic_menu_compose"
+        android:title="@string/menu_paste" />
+    <item android:id="@+id/menu_sort_time"
+        android:icon="@drawable/ic_menu_compose"
+        android:title="@string/menu_sort_time"/>
+    <item android:id="@+id/menu_sort_title"
+        android:icon="@drawable/ic_menu_compose"
+        android:title="@string/menu_sort_title"/>
 </menu>

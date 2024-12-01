@@ -18,14 +18,18 @@ package com.example.android.notepad;
 
 import com.example.android.notepad.NotePad;
 
+import android.app.AlertDialog;
 import android.app.ListActivity;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -38,6 +42,12 @@ import android.view.ContextMenu.ContextMenuInfo;
 import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.SimpleCursorAdapter;
+import android.widget.TextView;
+
+import java.sql.Date;
+import java.text.SimpleDateFormat;
+import java.util.Locale;
+
 
 /**
  * Displays a list of notes. Will display notes from the {@link Uri}
@@ -60,10 +70,13 @@ public class NotesList extends ListActivity {
     private static final String[] PROJECTION = new String[] {
             NotePad.Notes._ID, // 0
             NotePad.Notes.COLUMN_NAME_TITLE, // 1
+            NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE, // 2
     };
 
     /** The index of the title column */
     private static final int COLUMN_INDEX_TITLE = 1;
+
+    private static final int REQUEST_SEARCH = 1;
 
     /**
      * onCreate is called when Android starts this Activity from scratch.
@@ -117,11 +130,17 @@ public class NotesList extends ListActivity {
          */
 
         // The names of the cursor columns to display in the view, initialized to the title column
-        String[] dataColumns = { NotePad.Notes.COLUMN_NAME_TITLE } ;
+        String[] dataColumns = {
+                NotePad.Notes.COLUMN_NAME_TITLE,
+                NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE
+        } ;
 
         // The view IDs that will display the cursor columns, initialized to the TextView in
         // noteslist_item.xml
-        int[] viewIDs = { android.R.id.text1 };
+        int[] viewIDs = {
+                android.R.id.text1 ,
+                R.id.timestamp
+        };
 
         // Creates the backing adapter for the ListView.
         SimpleCursorAdapter adapter
@@ -131,7 +150,35 @@ public class NotesList extends ListActivity {
                       cursor,                           // The cursor to get items from
                       dataColumns,
                       viewIDs
-              );
+        ) {
+            @Override
+            public void bindView(View view, Context context, Cursor cursor) {
+                super.bindView(view, context, cursor);
+
+                // 获取时间戳字段并显示在 timestamp 上
+                String timestamp = cursor.getString(cursor.getColumnIndex(NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE));
+
+                // 确保时间戳不为空
+                if (timestamp != null && !timestamp.isEmpty()) {
+                    TextView timestampView = (TextView)view.findViewById(R.id.timestamp);
+                    timestampView.setText(formatTimestamp(timestamp));
+                }
+            }
+
+            // 格式化时间戳为可读的日期
+            private String formatTimestamp(String timestamp) {
+                // 格式化时间戳
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+                try {
+                    // 如果时间戳是一个长整型（毫秒）
+                    long timeInMillis = Long.parseLong(timestamp);
+                    return sdf.format(new Date(timeInMillis));
+                } catch (NumberFormatException e) {
+                    e.printStackTrace();
+                    return "";
+                }
+            }
+        };
 
         // Sets the ListView's adapter to be the cursor adapter that was just created.
         setListAdapter(adapter);
@@ -263,22 +310,37 @@ public class NotesList extends ListActivity {
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
+        case R.id.menu_search:
+            startActivityForResult(new Intent(this, Search.class), REQUEST_SEARCH);
+            return true;
         case R.id.menu_add:
           /*
            * Launches a new Activity using an Intent. The intent filter for the Activity
            * has to have action ACTION_INSERT. No category is set, so DEFAULT is assumed.
            * In effect, this starts the NoteEditor Activity in NotePad.
            */
-           startActivity(new Intent(Intent.ACTION_INSERT, getIntent().getData()));
-           return true;
+            startActivity(new Intent(Intent.ACTION_INSERT, getIntent().getData()));
+            return true;
         case R.id.menu_paste:
           /*
            * Launches a new Activity using an Intent. The intent filter for the Activity
            * has to have action ACTION_PASTE. No category is set, so DEFAULT is assumed.
            * In effect, this starts the NoteEditor Activity in NotePad.
            */
-          startActivity(new Intent(Intent.ACTION_PASTE, getIntent().getData()));
-          return true;
+            startActivity(new Intent(Intent.ACTION_PASTE, getIntent().getData()));
+            return true;
+        case R.id.menu_sort_time:
+                // 点击 "按时间排序" 选项时，更新笔记列表
+            sortNotesByTime();
+            return true;
+        case R.id.menu_sort_title:
+            // 点击 "按标题排序" 选项时，更新笔记列表
+            sortNotesByTitle();
+            return true;
+        case R.id.menu_color:
+            // 显示颜色选择对话框
+            changeBackgroundColor();
+            return true;
         default:
             return super.onOptionsItemSelected(item);
         }
@@ -465,4 +527,162 @@ public class NotesList extends ListActivity {
             startActivity(new Intent(Intent.ACTION_EDIT, uri));
         }
     }
+
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_SEARCH && resultCode == RESULT_OK) {
+            String query = data.getStringExtra("query");
+
+            // 如果有搜索内容，进行过滤；否则，显示所有内容
+            if (query != null && !query.isEmpty()) {
+                filterNotes(query);
+            } else {
+                // 如果没有输入搜索内容，显示所有笔记
+                displayAllNotes();
+            }
+        }
+    }
+
+    // 根据搜索内容过滤笔记
+    private void filterNotes(String query) {
+        Cursor cursor = managedQuery(
+                getIntent().getData(),  // 使用默认内容 URI
+                PROJECTION,  // 返回笔记 ID 和标题
+                NotePad.Notes.COLUMN_NAME_TITLE + " LIKE ? OR " + NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE + " LIKE ?",  // 添加条件
+                new String[]{"%" + query + "%", "%" + query + "%"},  // 查询条件
+                NotePad.Notes.DEFAULT_SORT_ORDER  // 使用默认排序
+        );
+
+        // 更新 ListView
+        updateListView(cursor);
+    }
+
+    // 显示所有笔记
+    private void displayAllNotes() {
+        Cursor cursor = managedQuery(
+                getIntent().getData(),  // 使用默认内容 URI
+                PROJECTION,  // 返回笔记 ID 和标题
+                null,  // 不加任何条件
+                null,  // 不需要额外的查询条件
+                NotePad.Notes.DEFAULT_SORT_ORDER  // 使用默认排序
+        );
+
+        // 更新 ListView
+        updateListView(cursor);
+    }
+
+    // 更新 ListView 的适配器
+    // 在 updateListView 中更新时间戳格式化
+    private void updateListView(Cursor cursor) {
+        // 创建一个 SimpleDateFormat 来格式化时间戳
+        final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+
+        // 创建一个适配器
+        SimpleCursorAdapter adapter = new SimpleCursorAdapter(
+                this,
+                R.layout.noteslist_item,
+                cursor,
+                new String[]{NotePad.Notes.COLUMN_NAME_TITLE, NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE},
+                new int[]{android.R.id.text1, R.id.timestamp}) {
+
+            @Override
+            public void setViewText(TextView v, String value) {
+                // 如果是时间戳字段，则将它格式化为日期
+                if (v.getId() == R.id.timestamp) {
+                    try {
+                        long timestamp = Long.parseLong(value);
+                        String formattedDate = dateFormat.format(new Date(timestamp));
+                        v.setText(formattedDate);
+                    } catch (NumberFormatException e) {
+                        // 如果无法转换为长整型，直接显示原始值
+                        v.setText(value);
+                    }
+                } else {
+                    super.setViewText(v, value);
+                }
+            }
+        };
+
+        // 设置适配器
+        setListAdapter(adapter);
+    }
+
+    // 按修改时间排序
+    private void sortNotesByTime() {
+        Cursor cursor = managedQuery(
+                getIntent().getData(),
+                PROJECTION,
+                null, // 无条件
+                null,
+                NotePad.Notes.COLUMN_NAME_MODIFICATION_DATE + " ASC"  // 按时间升序排序
+        );
+        // 更新 ListView
+        updateListView(cursor);
+    }
+
+    // 按标题排序
+    private void sortNotesByTitle() {
+        Cursor cursor = managedQuery(
+                getIntent().getData(),
+                PROJECTION,
+                null, // 无条件
+                null,
+                NotePad.Notes.COLUMN_NAME_TITLE + " ASC"  // 按标题升序排序
+        );
+        // 更新 ListView
+        updateListView(cursor);
+    }
+
+    private void changeBackgroundColor() {
+        // 预设颜色
+        final String[] colors = {"White","Red", "Green", "Blue","Cyan"};
+
+        // 使用 AlertDialog 让用户选择颜色
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择背景色")
+                .setItems(colors, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        // 根据用户选择的颜色设置背景
+                        String selectedColor = colors[which];
+                        setBackgroundColor(selectedColor);
+                    }
+                })
+                .show();
+    }
+
+    private void setBackgroundColor(String colorName) {
+        // 根据选中的颜色设置背景颜色
+        int color = Color.WHITE; // 默认白色
+        switch (colorName) {
+            case "White":
+                color = Color.WHITE;
+                break;
+            case "Red":
+                color = Color.RED;
+                break;
+            case "Green":
+                color = Color.GREEN;
+                break;
+            case "Blue":
+                color = Color.BLUE;
+                break;
+            case "Cyan":
+                color = Color.CYAN;
+                break;
+        }
+
+        // 设置背景色
+        getWindow().getDecorView().setBackgroundColor(color);
+
+        // 保存颜色设置到 SharedPreferences 中
+        SharedPreferences prefs = getSharedPreferences("AppPreferences", MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putString("background_color", colorName);
+        editor.apply();
+    }
+
+
 }
